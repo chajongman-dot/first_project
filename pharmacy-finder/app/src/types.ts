@@ -14,6 +14,8 @@ export interface Pharmacy {
   phone: string
   hours: Partial<Record<DayKey, DayHours>>
   tags: Tag[]
+  /** 위치 안내 문구 (예: "세류사거리남문방향50m") */
+  guide?: string
   source: string
   updated_at: string
 }
@@ -26,6 +28,8 @@ export interface ParkingLot {
   lng: number
   capacity: number
   operating_hours: string
+  fee_known: boolean
+  fee_type: string
   free_minutes: number
   base_minutes: number
   base_fee: number
