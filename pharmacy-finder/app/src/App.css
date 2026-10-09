@@ -56,3 +56,13 @@ details summary { cursor: pointer; color: var(--primary); font-size: .85rem; }
 .btn-sub { display: block; font-size: .7rem; font-weight: 400; margin-top: 2px; }
 .parking-yes { color: var(--primary); font-weight: 700; }
 .candidate { width: 100%; text-align: left; border-radius: 12px; }
+
+.search-form { flex-wrap: nowrap; }
+.search-wrap { position: relative; flex: 1; min-width: 0; display: flex; }
+.search-wrap .search { width: 100%; }
+.suggest { position: absolute; top: 100%; left: 0; right: 0; z-index: 1000; margin: 4px 0 0; padding: 4px 0; list-style: none; background: var(--card); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 6px 18px rgba(0,0,0,.18); }
+.suggest li { display: flex; align-items: center; }
+.suggest-item { flex: 1; text-align: left; background: none; border: none; color: var(--text); padding: 10px 14px; min-height: 44px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.suggest-del { background: none; border: none; color: var(--muted); padding: 10px 14px; min-height: 44px; }
+.suggest-foot { justify-content: flex-end; border-top: 1px solid var(--line); }
+.suggest-foot button { background: none; border: none; color: var(--primary); font-size: .8rem; padding: 8px 14px; }

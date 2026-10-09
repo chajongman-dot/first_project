@@ -13,6 +13,7 @@ import { loadNearbyPhotos, type NearbyPhoto } from './lib/photos'
 import { formatFee, parkingFee } from './lib/parking'
 import MapView from './components/MapView'
 import MiniMap from './components/MiniMap'
+import { addHistory, clearHistory, loadHistory, removeHistory, suggest } from './lib/searchHistory'
 import { loadHome, saveHome, type Home } from './lib/home'
 import { DEFAULT_PLACE } from './lib/places'
 import { loadMeta, loadParkingAround, loadPharmaciesAround, searchPharmacies, searchPlaces, type Place, type PharmacyHit } from './lib/data'
@@ -325,6 +326,8 @@ export default function App() {
   })
   const [query, setQuery] = useState('')
   const [candidates, setCandidates] = useState<Candidate[]>([])
+  const [history, setHistory] = useState(loadHistory)
+  const [suggestOpen, setSuggestOpen] = useState(false)
   const [geoMsg, setGeoMsg] = useState('')
   const [filters, setFilters] = useState<Filters>({ openNow: true, night: false, holiday: false, large: false })
   const [selected, setSelected] = useState<string | null>(null)
@@ -364,6 +367,7 @@ export default function App() {
   }
 
   function pick(c: Candidate) {
+    setHistory((h) => addHistory(h, c.name))
     if (c.kind === 'place') {
       setGeo({ lat: c.lat, lng: c.lng, label: c.name, count: c.count })
       setSelected(null)
@@ -377,21 +381,24 @@ export default function App() {
     setGeoMsg('')
   }
 
-  async function search(e: React.FormEvent) {
-    e.preventDefault()
+  async function runSearch(q: string) {
+    setSuggestOpen(false)
     let found: Candidate[]
     try {
-      const [places, pharms] = await Promise.all([searchPlaces(query, pos), searchPharmacies(query, pos)])
+      const [places, pharms] = await Promise.all([searchPlaces(q, pos), searchPharmacies(q, pos)])
       found = [
         ...pharms.map((h): Candidate => ({ kind: 'pharmacy', ...h })),
         ...places.slice(0, 6).map((p): Candidate => ({ kind: 'place', ...p })),
       ]
     } catch { return setGeoMsg('검색 정보를 불러오지 못했습니다.') }
-    if (found.length === 0) { setCandidates([]); return setGeoMsg(`"${query}" 에 해당하는 약국이나 지역을 찾지 못했습니다. 약국 이름(예: 온누리약국)이나 동 이름(예: 인계동)으로 검색해 보세요.`) }
+    if (found.length === 0) { setCandidates([]); return setGeoMsg(`"${q}" 에 해당하는 약국이나 지역을 찾지 못했습니다. 약국 이름(예: 온누리약국)이나 동 이름(예: 인계동)으로 검색해 보세요.`) }
     if (found.length === 1) return pick(found[0])
     setGeoMsg('')
     setCandidates(found)
   }
+
+  const search = (e: React.FormEvent) => { e.preventDefault(); void runSearch(query) }
+  const suggestions = suggestOpen ? suggest(history, query) : []
 
   function locate() {
     if (!navigator.geolocation) return setGeoMsg('이 기기는 위치 기능을 지원하지 않습니다.')
@@ -457,15 +464,46 @@ export default function App() {
               </>
             )}
                       </div>
-          <form className="row" style={{ marginTop: 10 }} onSubmit={search}>
-            <input
-              className="search"
-              type="search"
-              aria-label="약국·지역 검색"
-              placeholder="약국 이름 또는 지역 (예: 온누리약국, 인계동)"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
+          <form className="row search-form" style={{ marginTop: 10 }} onSubmit={search}>
+            <div className="search-wrap">
+              <input
+                className="search"
+                type="search"
+                aria-label="약국·지역 검색"
+                aria-expanded={suggestions.length > 0}
+                aria-controls="search-suggest"
+                autoComplete="off"
+                placeholder="약국 이름 또는 지역 (예: 온누리약국, 인계동)"
+                value={query}
+                onChange={(e) => { setQuery(e.target.value); setSuggestOpen(true) }}
+                onFocus={() => setSuggestOpen(true)}
+                onBlur={() => setSuggestOpen(false)}
+                onKeyDown={(e) => e.key === 'Escape' && setSuggestOpen(false)}
+              />
+              {suggestions.length > 0 && (
+                // onMouseDown: 입력창 blur로 목록이 닫히기 전에 클릭을 처리한다
+                <ul id="search-suggest" className="suggest" role="listbox" aria-label="최근 검색">
+                  {suggestions.map((h) => (
+                    <li key={h} role="option" aria-selected="false">
+                      <button type="button" className="suggest-item" onMouseDown={(e) => { e.preventDefault(); setQuery(h); void runSearch(h) }}>
+                        🕘 {h}
+                      </button>
+                      <button
+                        type="button"
+                        className="suggest-del"
+                        aria-label={`${h} 기록 삭제`}
+                        onMouseDown={(e) => { e.preventDefault(); setHistory((l) => removeHistory(l, h)) }}
+                      >
+                        ✕
+                      </button>
+                    </li>
+                  ))}
+                  <li className="suggest-foot">
+                    <button type="button" onMouseDown={(e) => { e.preventDefault(); clearHistory(); setHistory([]) }}>전체 삭제</button>
+                  </li>
+                </ul>
+              )}
+            </div>
             <button className="chip" type="submit">검색</button>
           </form>
           {candidates.length > 0 && (
