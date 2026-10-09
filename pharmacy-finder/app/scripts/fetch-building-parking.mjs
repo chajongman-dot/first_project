@@ -2,7 +2,8 @@
 // 사용: node --env-file=.env scripts/fetch-building-parking.mjs [최대약국수]
 //  - 먼저 `npm run fetch-data` 로 public/data 를 만들어 두어야 한다.
 //  - 중간 결과는 .cache/ 에 저장되어 중단 후 다시 실행하면 이어서 진행한다.
-//  - 결과: public/data/building-parking.json  { 약국id: 주차대수 }  (대장 조회가 안 된 약국은 키 없음)
+//  - 결과: public/data/building-parking.json  { 약국id: [주차대수 합계, 필지 내 건물 수] }  (대장 조회가 안 된 약국은 키 없음)
+//    한 필지에 건물이 여럿(단지·캠퍼스)이면 합계는 모든 건물의 값이라, 앱에서 건물 수를 함께 표시한다.
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 
 const JUSO = process.env.JUSO_API_KEY
@@ -131,9 +132,12 @@ async function lookupBuilding(j) {
   const items = Array.isArray(raw) ? raw : raw ? [raw] : []
   if (items.length === 0) return null // 대장 없음
   const sum = (k) => items.reduce((a, x) => a + (Number(x[k]) || 0), 0)
+  const park = (x) => ['indrAutoUtcnt', 'oudrAutoUtcnt', 'indrMechUtcnt', 'oudrMechUtcnt'].reduce((a, k) => a + (Number(x[k]) || 0), 0)
   return {
     total: sum('indrAutoUtcnt') + sum('oudrAutoUtcnt') + sum('indrMechUtcnt') + sum('oudrMechUtcnt'),
     buildings: items.length,
+    // 합산 방식을 나중에 바꿔도 API를 다시 부르지 않도록 건물별 원본 값을 남긴다
+    detail: items.map((x) => ({ dong: String(x.dongNm ?? '').trim(), name: String(x.bldNm ?? '').trim(), purpose: x.mainPurpsCdNm, parking: park(x), kind: x.regstrKindCdNm })),
   }
 }
 
@@ -149,7 +153,7 @@ let matched = 0
 for (const p of targets) {
   const j = jusoCache[roadOf(p.address)]
   const b = j ? bldCache[lotKey(j)] : null
-  if (b) { out[p.id] = b.total; matched++ }
+  if (b) { out[p.id] = [b.total, b.buildings]; matched++ }
 }
 if (!Number.isFinite(LIMIT)) await writeFile('public/data/building-parking.json', JSON.stringify(out))
 console.log(`완료: 주소 변환 ${targets.filter((p) => jusoCache[roadOf(p.address)]).length}/${targets.length}, 대장 확인 ${matched}/${targets.length}` +

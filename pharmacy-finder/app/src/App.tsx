@@ -6,7 +6,7 @@ import {
   DAY_LABEL, STATE_LABEL, WEEK_ORDER, formatHours, hasHolidayHours, hoursFor, isHoliday,
   isNight, openState, todayKey,
 } from './lib/hours'
-import { BUILDING_PARKING_NOTE, loadBuildingParking } from './lib/buildingParking'
+import { BUILDING_PARKING_NOTE, buildingParkingText, loadBuildingParking, type BuildingParking } from './lib/buildingParking'
 import { loadGoogleReview, type GoogleReviewResult } from './lib/googleReview'
 import { loadNaverBlogCount, type NaverBlogResult } from './lib/naverBlog'
 import { loadNearbyPhotos, type NearbyPhoto } from './lib/photos'
@@ -147,8 +147,8 @@ function NearbyPhotos({ lat, lng }: { lat: number; lng: number }) {
 }
 
 /** 건축물대장 기준 건물 주차 대수. undefined=로딩 중, null=확인 못함 */
-function useBuildingParking(id: string): number | null | undefined {
-  const [v, setV] = useState<{ id: string; n: number | null } | null>(null)
+function useBuildingParking(id: string): BuildingParking | null | undefined {
+  const [v, setV] = useState<{ id: string; n: BuildingParking | null } | null>(null)
   useEffect(() => {
     let alive = true
     loadBuildingParking().then((m) => alive && setV({ id, n: m && id in m ? m[id] : null }))
@@ -160,11 +160,7 @@ function useBuildingParking(id: string): number | null | undefined {
 function BuildingParkingLine({ id }: { id: string }) {
   const n = useBuildingParking(id)
   if (n === undefined || n === null) return null // 모르는 것은 표시하지 않는다
-  return n > 0 ? (
-    <div className="meta parking-yes">🏢 건물 주차장 {n.toLocaleString()}대 (건축물대장)</div>
-  ) : (
-    <div className="meta">🏢 건물 주차 공간 없음 (건축물대장 기준)</div>
-  )
+  return <div className={n[0] > 0 ? 'meta parking-yes' : 'meta'}>🏢 {buildingParkingText(n)}</div>
 }
 
 /**
@@ -177,9 +173,10 @@ function BuildingParkingDetail({ id }: { id: string }) {
   if (n === null) return <p className="meta">이 약국 건물의 주차 정보를 건축물대장에서 확인하지 못했습니다.</p>
   return (
     <>
-      <p>
-        {n > 0 ? <>🏢 이 건물에 주차 공간 <strong>{n.toLocaleString()}대</strong>가 등록되어 있습니다.</> : '🏢 건축물대장에 등록된 주차 공간이 없습니다.'}
-      </p>
+      <p>🏢 <strong>{buildingParkingText(n)}</strong></p>
+      {n[1] > 1 && <p className="meta">같은 필지에 건물이 {n[1]}동 있어, 약국이 있는 건물만의 값이 아니라 전체 합계입니다.</p>}
+      {n[1] === 1 && n[0] >= 200 && <p className="meta">주차 대수가 매우 커서 아파트 단지·복합시설 전체 값일 수 있습니다. 약국 이용객 전용 주차 공간 수가 아닙니다.</p>}
+      {n[0] === 0 && <p className="meta">대장에 주차 정보가 비어 있는 경우도 있어, 실제로 주차할 수 없다는 뜻은 아닙니다.</p>}
       <p className="meta">{BUILDING_PARKING_NOTE}</p>
     </>
   )
