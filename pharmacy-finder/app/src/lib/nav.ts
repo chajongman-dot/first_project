@@ -1,7 +1,7 @@
-export type MapApp = 'kakao' | 'naver' | 'tmap'
+export type MapApp = 'kakao' | 'naver'
 
 export const MAP_APP_LABEL: Record<MapApp, string> = {
-  kakao: '카카오맵', naver: '네이버지도', tmap: '티맵',
+  kakao: '카카오맵', naver: '네이버지도',
 }
 
 export interface Point { lat: number; lng: number }
@@ -10,7 +10,7 @@ export const HOME_NAME = '내 위치'
 
 /**
  * 길찾기 링크. from이 있으면 출발지로 지정하고, 없으면 각 앱이 현재 위치를 출발지로 쓴다.
- * 웹 URL이 있는 앱은 웹, 티맵은 딥링크.
+ * 두 앱 모두 웹 URL로 연결한다.
  */
 export function navUrl(app: MapApp, name: string, lat: number, lng: number, from?: Point | null): string {
   const n = encodeURIComponent(name)
@@ -22,8 +22,6 @@ export function navUrl(app: MapApp, name: string, lat: number, lng: number, from
         : `https://map.kakao.com/link/to/${n},${lat},${lng}`
     case 'naver':
       return `https://map.naver.com/p/directions/${from ? `${from.lng},${from.lat},${f}` : '-'}/${lng},${lat},${n}/-/transit`
-    case 'tmap':
-      return `tmap://route?${from ? `startx=${from.lng}&starty=${from.lat}&startname=${f}&` : ''}goalname=${n}&goaly=${lat}&goalx=${lng}`
   }
 }
 

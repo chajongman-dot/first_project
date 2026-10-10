@@ -3,7 +3,7 @@ export type DayKey = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun' | 'ho
 /** [시작, 종료] "HH:MM". 종료 "24:00" 허용. null이면 휴무, 키가 없으면 정보 없음 */
 export type DayHours = [string, string] | null
 
-export type Tag = 'large' | 'discount' | 'night'
+export type Tag = 'warehouse' | 'night'
 
 export interface Pharmacy {
   id: string
@@ -45,5 +45,7 @@ export type Filters = {
   openNow: boolean
   night: boolean
   holiday: boolean
-  large: boolean
+  warehouse: boolean
+  /** 검색한 동네(지역)에 속한 약국만 */
+  area: boolean
 }

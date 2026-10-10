@@ -62,3 +62,5 @@ details summary { cursor: pointer; color: var(--primary); font-size: .85rem; }
 .suggest-del { background: none; border: none; color: var(--muted); padding: 10px 14px; min-height: 44px; }
 .suggest-foot { justify-content: flex-end; border-top: 1px solid var(--line); }
 .suggest-foot button { background: none; border: none; color: var(--primary); font-size: .8rem; padding: 8px 14px; }
+.tag-check { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); background: var(--card); border-radius: 12px; padding: 12px 14px; min-height: 48px; font-size: .95rem; }
+.tag-check input { width: 20px; height: 20px; }

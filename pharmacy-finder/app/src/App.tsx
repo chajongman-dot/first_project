@@ -10,6 +10,8 @@ import { BUILDING_PARKING_NOTE, buildingParkingText, loadBuildingParking, type B
 import { formatFee, parkingFee } from './lib/parking'
 import MapView from './components/MapView'
 import MiniMap from './components/MiniMap'
+import { USER_TAGS, USER_TAG_LABEL, loadUserTags, setUserTag, type UserTag, type UserTagMap } from './lib/userTags'
+import { inRegion, isDongLevel, regionShortName } from './lib/region'
 import { addHistory, clearHistory, loadHistory, removeHistory, suggest } from './lib/searchHistory'
 import { loadHome, saveHome, type Home } from './lib/home'
 import { DEFAULT_PLACE } from './lib/places'
@@ -18,13 +20,13 @@ import { MAP_APP_LABEL, naverClipUrl, naverReviewUrl, navUrl, placeQuery, type M
 
 const PARKING_RADIUS_M = 300
 const PAGE_SIZE = 10
-const TAG_LABEL: Record<Tag, string> = { large: '대형', discount: '할인', night: '심야' }
+const TAG_LABEL: Record<Tag, string> = { warehouse: '창고형', night: '심야' }
 const DISCLAIMER =
   '표시된 영업시간·가격·요금은 참고 정보이며 실제와 다를 수 있습니다. 방문 전 전화로 확인하세요.'
 
 type Candidate = ({ kind: 'place' } & Place) | ({ kind: 'pharmacy' } & PharmacyHit)
 
-type Pos = { lat: number; lng: number; label: string; count?: number }
+type Pos = { lat: number; lng: number; label: string; count?: number; region?: string }
 
 function useNow(): Date {
   const [now, setNow] = useState(() => new Date())
@@ -136,7 +138,12 @@ function ParkingInfo({ lat, lng }: { lat: number; lng: number }) {
   )
 }
 
-function Detail({ p, pos, now, home, onBack }: { p: Pharmacy; pos: Pos; now: Date; home: Home | null; onBack: () => void }) {
+function Detail({ p, pos, now, home, userTags, onToggleTag, onBack }: {
+  p: Pharmacy; pos: Pos; now: Date; home: Home | null
+  userTags: UserTag[]
+  onToggleTag: (tag: UserTag, on: boolean) => void
+  onBack: () => void
+}) {
   const [custom, setCustom] = useState(90)
   const today = todayKey(now)
   const [parkingLots, setParkingLots] = useState<ParkingLot[] | null>(null)
@@ -185,6 +192,17 @@ function Detail({ p, pos, now, home, onBack }: { p: Pharmacy; pos: Pos; now: Dat
       <p className="meta">지도의 P 표시는 근처 주차장입니다.</p>
 
       <ReviewSection p={p} />
+
+      <h2>분류 지정</h2>
+      <div className="row">
+        {USER_TAGS.map((t) => (
+          <label key={t} className="tag-check">
+            <input type="checkbox" checked={userTags.includes(t)} onChange={(e) => onToggleTag(t, e.target.checked)} />
+            {USER_TAG_LABEL[t]}
+          </label>
+        ))}
+      </div>
+      <p className="meta">내가 직접 지정한 분류이며 이 기기에만 저장됩니다. 지정하면 목록의 배지와 &quot;창고형&quot; 필터에 반영됩니다.</p>
 
       <h2>주차</h2>
       <BuildingParkingDetail id={p.id} />
@@ -240,7 +258,7 @@ export default function App() {
   const [history, setHistory] = useState(loadHistory)
   const [suggestOpen, setSuggestOpen] = useState(false)
   const [geoMsg, setGeoMsg] = useState('')
-  const [filters, setFilters] = useState<Filters>({ openNow: true, night: false, holiday: false, large: false })
+  const [filters, setFilters] = useState<Filters>({ openNow: true, night: false, holiday: false, warehouse: false, area: false })
   const [selected, setSelected] = useState<string | null>(null)
   const [view, setView] = useState<'list' | 'map'>('list')
 
@@ -261,7 +279,12 @@ export default function App() {
   }, [pos.lat, pos.lng, posKey])
   const ready = loaded?.key === posKey
   const loadState = !ready ? 'loading' : loaded.error ? 'error' : 'ready'
-  const pharmacies = useMemo(() => (ready ? loaded.list : []), [ready, loaded])
+  const [userTags, setUserTags] = useState(loadUserTags)
+  // 공공데이터 태그에 사용자가 지정한 창고형 분류를 합친다
+  const pharmacies = useMemo(
+    () => (ready ? loaded.list : []).map((p) => (userTags[p.id] ? { ...p, tags: [...new Set([...p.tags, ...userTags[p.id]])] } : p)),
+    [ready, loaded, userTags],
+  )
   const updatedAt = loaded?.updatedAt ?? ""
 
   function registerHome(lat: number, lng: number) {
@@ -280,20 +303,30 @@ export default function App() {
   function pick(c: Candidate) {
     setHistory((h) => addHistory(h, c.name))
     if (c.kind === 'place') {
-      setGeo({ lat: c.lat, lng: c.lng, label: c.name, count: c.count })
+      setGeo({ lat: c.lat, lng: c.lng, label: c.name, count: c.count, region: c.name })
       setSelected(null)
+      // 동·읍·면을 검색하면 그 동네 약국만 보여주는 것이 기대에 맞으므로 켠다. 시·군·구 이상은 끈다.
+      setFilters((f) => ({ ...f, area: isDongLevel(c.name) }))
     } else {
       // 약국을 고르면 그 약국 위치로 이동하고, 주변 데이터가 로드되면 상세 화면이 열린다.
       setGeo({ lat: c.lat, lng: c.lng, label: c.name })
       setSelected(c.id)
+      setFilters((f) => ({ ...f, area: false }))
     }
     setView('list')
     setCandidates([])
     setGeoMsg('')
+    setPageState({ key: '', page: 1 }) // 같은 위치를 다시 골라도 1쪽부터 보여준다
   }
 
   async function runSearch(q: string) {
+    if (!q.trim()) return
+    // 새 검색을 시작하면 이전 검색의 후보·안내 문구·쪽 번호·열려 있던 상세 화면을 모두 비운다
     setSuggestOpen(false)
+    setCandidates([])
+    setGeoMsg('')
+    setSelected(null)
+    setPageState({ key: '', page: 1 })
     let found: Candidate[]
     try {
       const [places, pharms] = await Promise.all([searchPlaces(q, pos), searchPharmacies(q, pos)])
@@ -333,15 +366,16 @@ export default function App() {
         (!filters.openNow || s === 'open' || s === 'closing') &&
         (!filters.night || isNight(p)) &&
         (!filters.holiday || hasHolidayHours(p)) &&
-        (!filters.large || p.tags.includes('large') || p.tags.includes('discount')))
+        (!filters.warehouse || p.tags.includes('warehouse')) &&
+        (!filters.area || !pos.region || inRegion(p.address, pos.region)))
       .sort((a, b) => a.d - b.d)
-  }, [pharmacies, pos.lat, pos.lng, now, filters])
+  }, [pharmacies, pos.lat, pos.lng, pos.region, now, filters])
 
   // 지도에는 영업 중(곧 종료 포함)인 약국만 그린다. 목록 필터와는 별개로 항상 적용.
   const mapRows = useMemo(() => rows.filter(({ s }) => s === 'open' || s === 'closing'), [rows])
 
   // 위치나 필터가 바뀌면 1쪽으로 돌아간다 (key가 달라지면 저장된 쪽 번호를 무시)
-  const viewKey = `${posKey}|${filters.openNow}${filters.night}${filters.holiday}${filters.large}`
+  const viewKey = `${posKey}|${filters.openNow}${filters.night}${filters.holiday}${filters.warehouse}${filters.area}`
   const [pageState, setPageState] = useState({ key: '', page: 1 })
   const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE))
   const page = Math.min(pageState.key === viewKey ? pageState.page : 1, totalPages)
@@ -357,7 +391,15 @@ export default function App() {
   return (
     <div className="app">
       {sel ? (
-        <Detail p={sel} pos={pos} now={now} home={home} onBack={() => setSelected(null)} />
+        <Detail
+          p={sel}
+          pos={pos}
+          now={now}
+          home={home}
+          userTags={userTags[sel.id] ?? []}
+          onToggleTag={(tag, on) => setUserTags((m: UserTagMap) => setUserTag(m, sel.id, tag, on))}
+          onBack={() => setSelected(null)}
+        />
       ) : (
         <>
           <h1>급할 때 약국</h1>
@@ -433,11 +475,16 @@ export default function App() {
             <button className="chip" aria-pressed={filters.openNow} onClick={() => toggle('openNow')}>지금 영업 중</button>
             <button className="chip" aria-pressed={filters.night} onClick={() => toggle('night')}>야간</button>
             <button className="chip" aria-pressed={filters.holiday} onClick={() => toggle('holiday')}>공휴일</button>
-            <button className="chip" aria-pressed={filters.large} onClick={() => toggle('large')}>대형·할인</button>
+            <button className="chip" aria-pressed={filters.warehouse} onClick={() => toggle('warehouse')}>창고형 약국</button>
+            {pos.region && (
+              <button className="chip" aria-pressed={filters.area} onClick={() => toggle('area')}>
+                📍 {regionShortName(pos.region)}만 보기
+              </button>
+            )}
           </div>
           <details>
-            <summary>대형·할인 약국 판정 기준</summary>
-            <p className="meta">운영자가 직접 확인해 태그를 부여합니다. 대형: 여러 약사가 근무하는 규모 약국. 할인: 일반의약품 할인 판매가 확인된 약국. 근거 없는 태그는 쓰지 않습니다.</p>
+            <summary>창고형 약국 판정 기준</summary>
+            <p className="meta">공공데이터에는 약국 규모·판매 방식 정보가 없어 사용자가 직접 지정합니다. 약국 상세 화면의 "분류 지정"에서 창고형 약국을 체크하면 이 기기의 목록 배지와 필터에 반영됩니다. 다른 기기나 다른 사람에게는 공유되지 않습니다.</p>
           </details>
 
           {loadState === 'ready' && (
@@ -487,12 +534,14 @@ export default function App() {
             </ul>
             {rows.length > PAGE_SIZE && (
               <nav className="pager" aria-label="페이지 이동">
-                <button className="chip" disabled={page === 1} onClick={() => goPage(page - 1)}>← 이전</button>
-                <span className="meta" aria-live="polite">
-                  {page} / {totalPages}쪽
-                </span>
-                <button className="chip" disabled={page === totalPages} onClick={() => goPage(page + 1)}>다음 →</button>
-              </nav>
+              <button className="chip" disabled={page === 1} onClick={() => goPage(1)} aria-label="첫 쪽">«</button>
+              <button className="chip" disabled={page === 1} onClick={() => goPage(page - 1)}>← 이전</button>
+              <span className="meta" aria-live="polite">
+                {page} / {totalPages}쪽
+              </span>
+              <button className="chip" disabled={page === totalPages} onClick={() => goPage(page + 1)}>다음 →</button>
+              <button className="chip" disabled={page === totalPages} onClick={() => goPage(totalPages)} aria-label={`마지막 쪽 (${totalPages}쪽)`}>»</button>
+            </nav>
             )}
             </>
           )}
