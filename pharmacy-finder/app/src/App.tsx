@@ -7,9 +7,6 @@ import {
   isNight, openState, todayKey,
 } from './lib/hours'
 import { BUILDING_PARKING_NOTE, buildingParkingText, loadBuildingParking, type BuildingParking } from './lib/buildingParking'
-import { loadGoogleReview, type GoogleReviewResult } from './lib/googleReview'
-import { loadNaverBlogCount, type NaverBlogResult } from './lib/naverBlog'
-import { loadNearbyPhotos, type NearbyPhoto } from './lib/photos'
 import { formatFee, parkingFee } from './lib/parking'
 import MapView from './components/MapView'
 import MiniMap from './components/MiniMap'
@@ -17,7 +14,7 @@ import { addHistory, clearHistory, loadHistory, removeHistory, suggest } from '.
 import { loadHome, saveHome, type Home } from './lib/home'
 import { DEFAULT_PLACE } from './lib/places'
 import { loadMeta, loadParkingAround, loadPharmaciesAround, searchPharmacies, searchPlaces, type Place, type PharmacyHit } from './lib/data'
-import { MAP_APP_LABEL, REVIEW_SITE_LABEL, navUrl, reviewUrl, type MapApp, type ReviewSite } from './lib/nav'
+import { MAP_APP_LABEL, naverClipUrl, naverReviewUrl, navUrl, placeQuery, type MapApp } from './lib/nav'
 
 const PARKING_RADIUS_M = 300
 const PAGE_SIZE = 10
@@ -56,92 +53,21 @@ function NavButtons({ name, lat, lng, from }: { name: string; lat: number; lng: 
 }
 
 function ReviewSection({ p }: { p: Pharmacy }) {
-  const [res, setRes] = useState<{ id: string; r: GoogleReviewResult } | null>(null)
-  useEffect(() => {
-    let alive = true
-    loadGoogleReview(p.name, p.address, p.lat, p.lng).then((r) => alive && setRes({ id: p.id, r }))
-    return () => { alive = false }
-  }, [p.id, p.name, p.address, p.lat, p.lng])
-  const g = res?.id === p.id ? res.r : null
-  const found = g?.status === 'ok' ? g.review : null
-
-  const [blog, setBlog] = useState<{ id: string; r: NaverBlogResult } | null>(null)
-  useEffect(() => {
-    let alive = true
-    loadNaverBlogCount(p.name, p.address).then((r) => alive && setBlog({ id: p.id, r }))
-    return () => { alive = false }
-  }, [p.id, p.name, p.address])
-  const nb = blog?.id === p.id ? blog.r : null
-
   return (
     <>
-      <h2>리뷰</h2>
+      <h2>네이버 클립·리뷰</h2>
       <div className="actions">
-        {(Object.keys(REVIEW_SITE_LABEL) as ReviewSite[]).map((site) => (
-          <a
-            key={site}
-            className="btn"
-            href={site === 'google' && found ? found.url : reviewUrl(site, p.name, p.address)}
-            target="_blank"
-            rel="noreferrer"
-          >
-            {REVIEW_SITE_LABEL[site]}
-            {site === 'naver' && nb?.status === 'ok' && <small className="btn-sub">블로그 약 {nb.total.toLocaleString()}건</small>}
-          </a>
-        ))}
+        <a className="btn" href={naverClipUrl(placeQuery(p.name, p.address))} target="_blank" rel="noreferrer">
+          📹 클립 보기
+        </a>
+        <a className="btn" href={naverReviewUrl(p.name, p.address)} target="_blank" rel="noreferrer">
+          네이버지도 리뷰
+        </a>
       </div>
-      <p className="meta" aria-live="polite">
-        {g === null && '구글 리뷰 수를 확인하는 중…'}
-        {found && (
-          <>
-            구글지도: {found.rating !== null && <>★ <strong>{found.rating.toFixed(1)}</strong> · </>}
-            리뷰 <strong>{found.count.toLocaleString()}</strong>개 (정보 제공: Google)
-          </>
-        )}
-        {g?.status === 'not-found' && '구글지도: 같은 약국을 찾지 못해 리뷰 수를 표시하지 않습니다.'}
-        {g?.status === 'no-key' && '구글지도: 리뷰 수 조회가 설정되지 않았습니다 (VITE_GOOGLE_MAPS_API_KEY).'}
-        {g?.status === 'error' && `구글지도: 리뷰 수를 불러오지 못했습니다 (${g.message}).`}
-      </p>
       <p className="meta">
-        {nb === null && '네이버 블로그 글 수를 확인하는 중…'}
-        {nb?.status === 'ok' && '네이버지도: 블로그 글 수는 "약국 이름 + 동네" 검색 결과의 총 건수로, 정확한 리뷰 수가 아니며 다른 가게 글이 섞일 수 있습니다 (정보 제공: 네이버).'}
-        {nb?.status === 'no-key' && '네이버지도: 블로그 글 수 조회가 설정되지 않았습니다 (NAVER_CLIENT_ID / NAVER_CLIENT_SECRET).'}
-        {nb?.status === 'error' && `네이버지도: 블로그 글 수를 불러오지 못했습니다 (${nb.message}).`}
+        클립은 &quot;{placeQuery(p.name, p.address)}&quot; 검색 결과로 이동합니다. 클립은 공식 검색 API가 없어 영상 목록이나 유무는 미리 보여드리지 못하며,
+        리뷰 내용은 네이버지도에서 확인하세요. 같은 이름의 다른 가게 영상·약국이 나올 수 있습니다.
       </p>
-      <p className="meta">카카오맵은 리뷰 수를 제공하지 않아 링크로만 연결합니다. 리뷰 내용은 각 서비스에서 확인하세요. 같은 이름의 다른 약국이 검색될 수 있습니다.</p>
-    </>
-  )
-}
-
-function NearbyPhotos({ lat, lng }: { lat: number; lng: number }) {
-  const [state, setState] = useState<{ key: string; photos: NearbyPhoto[]; error: boolean } | null>(null)
-  const key = `${lat},${lng}`
-  useEffect(() => {
-    let alive = true
-    loadNearbyPhotos(lat, lng).then(
-      (photos) => alive && setState({ key, photos, error: false }),
-      () => alive && setState({ key, photos: [], error: true }),
-    )
-    return () => { alive = false }
-  }, [lat, lng, key])
-  if (state?.key !== key) return <p className="meta">주변 사진을 찾는 중…</p>
-  if (state.error) return <p className="meta">주변 사진을 불러오지 못했습니다.</p>
-  if (state.photos.length === 0) return <p className="meta">반경 500m 안에 등록된 주변 사진이 없습니다.</p>
-  return (
-    <>
-      <h2>주변 사진</h2>
-      <p className="meta">약국 사진이 아닌, 반경 500m 안에서 촬영된 사진입니다 (Wikimedia Commons).</p>
-      <ul className="photos">
-        {state.photos.map((ph) => (
-          <li key={ph.page}>
-            <a href={ph.page} target="_blank" rel="noreferrer">
-              <img src={ph.thumb} alt={ph.title} loading="lazy" />
-            </a>
-            <div className="meta">{ph.title} · {formatDistance(ph.distanceM)}</div>
-            <div className="meta">© {ph.author} · {ph.license}</div>
-          </li>
-        ))}
-      </ul>
     </>
   )
 }
@@ -210,17 +136,6 @@ function ParkingInfo({ lat, lng }: { lat: number; lng: number }) {
   )
 }
 
-/** 목록용: 화면에 보이는 약국만 조회하고, 결과는 캐시되어 상세 화면에서 재사용된다. */
-function PhotoBadge({ lat, lng }: { lat: number; lng: number }) {
-  const [count, setCount] = useState(0)
-  useEffect(() => {
-    let alive = true
-    loadNearbyPhotos(lat, lng).then((r) => alive && setCount(r.length), () => {})
-    return () => { alive = false }
-  }, [lat, lng])
-  return count > 0 ? <span className="badge tag">📷 주변 사진 있음</span> : null
-}
-
 function Detail({ p, pos, now, home, onBack }: { p: Pharmacy; pos: Pos; now: Date; home: Home | null; onBack: () => void }) {
   const [custom, setCustom] = useState(90)
   const today = todayKey(now)
@@ -268,7 +183,6 @@ function Detail({ p, pos, now, home, onBack }: { p: Pharmacy; pos: Pos; now: Dat
       <MiniMap lat={p.lat} lng={p.lng} name={p.name} lots={lotMarks} />
       {p.guide && <p className="meta">📍 위치 안내: {p.guide}</p>}
       <p className="meta">지도의 P 표시는 근처 주차장입니다.</p>
-      <NearbyPhotos lat={p.lat} lng={p.lng} />
 
       <ReviewSection p={p} />
 
@@ -558,7 +472,6 @@ export default function App() {
                   <button className="open" onClick={() => setSelected(p.id)}>
                     <div className="name">{p.name} <StateBadge p={p} now={now} />
                       {p.tags.map((t) => <span key={t} className="badge tag">{TAG_LABEL[t]}</span>)}
-                    <PhotoBadge lat={p.lat} lng={p.lng} />
                     </div>
                     <div className="meta">{formatDistance(d)} · {p.address}</div>
                     <div className="meta">오늘 {formatHours(hoursFor(p, now))}</div>

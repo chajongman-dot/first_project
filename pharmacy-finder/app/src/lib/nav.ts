@@ -27,20 +27,21 @@ export function navUrl(app: MapApp, name: string, lat: number, lng: number, from
   }
 }
 
-export type ReviewSite = 'kakao' | 'naver' | 'google'
-
-export const REVIEW_SITE_LABEL: Record<ReviewSite, string> = {
-  kakao: '카카오맵 리뷰', naver: '네이버지도 리뷰', google: '구글지도 리뷰',
-}
-
-/** 각 지도 서비스의 장소 검색 결과 링크. 리뷰는 해당 서비스에서 직접 확인한다. */
-export function reviewUrl(site: ReviewSite, name: string, address: string): string {
+/** 네이버지도의 장소 검색 결과 링크. 리뷰는 네이버지도에서 직접 확인한다. */
+export function naverReviewUrl(name: string, address: string): string {
   // 도로명 주소만 남겨 동명 약국을 구분한다: "경기도 수원시 권선구 정조로 523, 1층 (세류동)" → "... 정조로 523"
   const road = address.replace(/\(.*$/, '').split(',')[0].trim()
-  const q = encodeURIComponent(`${name} ${road}`)
-  switch (site) {
-    case 'kakao': return `https://map.kakao.com/link/search/${q}`
-    case 'naver': return `https://map.naver.com/p/search/${q}`
-    case 'google': return `https://www.google.com/maps/search/?api=1&query=${q}`
-  }
+  return `https://map.naver.com/p/search/${encodeURIComponent(`${name} ${road}`)}`
+}
+
+/** 네이버 클립 검색 결과 링크. 클립은 공식 검색 API가 없어 목록을 가져오지 않고 검색 화면으로 연결만 한다. */
+export function naverClipUrl(query: string): string {
+  return `https://search.naver.com/search.naver?ssc=tab.clip.all&query=${encodeURIComponent(query)}`
+}
+
+/** 네이버 검색용 문구: 약국 이름 + 동네 (동 이름이 없으면 시·군·구). */
+export function placeQuery(name: string, address: string): string {
+  const dong = address.match(/\(([^)]*?)(?:,|\))/)?.[1] ?? ''
+  const area = /(동|읍|면|가|리)$/.test(dong) ? dong : address.split(/\s+/).slice(1, 3).join(' ')
+  return `${name} ${area}`.trim()
 }
